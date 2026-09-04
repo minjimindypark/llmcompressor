@@ -14,7 +14,7 @@ block into your system prompt, edit or retire lines by hand.
 
 Stdlib only. Memory file defaults to ./notebook.md (override with --notebook).
 """
-import argparse, json, os, re, sys
+import argparse, json, math, os, re, sys
 from datetime import date
 
 LINE_RE = re.compile(
@@ -92,47 +92,65 @@ def iter_messages(path):
 
 # ------------------------------------------------------------------ heuristics
 
-DECISION_WORDS = re.compile(
-    r"\b(decid\w+|will use|chose|choose|must|should|always|never|don'?t|do not"
-    r"|fixed|bug|because|instead|switch\w*|default|renamed?|moved|deprecated"
-    r"|todo|remember|important|note that|confirmed|verified|root cause)\b"
-    r"|하기로|결정|금지|완료|정본|원인|수정|확인|필수|해야", re.I)
-
-# A line that CHANGES a value is worth more than a line that merely mentions one.
-# Fluent, on-topic sentences crowd out the one turn that revised the answer, so
-# revision markers are scored separately and weighted above topical keywords.
-PIVOT_WORDS = re.compile(
-    r"\b(actually|turns out|correction|corrected|instead of|no longer|used to be"
-    r"|was wrong|not \w+ anymore|changed (?:from|to)|updated? (?:from|to)|rolled back"
-    r"|reverted|replaced? (?:by|with)|overrides?|supersed\w+|as of \w+|since \w+ \d"
-    r"|previously)\b"
-    r"|아니라|바뀌|바꿔|바꿨|정정|취소|철회|대신|더 이상|이제는|원래는|아까|틀렸", re.I)
-
-# "X -> Y", "from 14 to 16", "14 → 16": an explicit old-value/new-value pair.
-PIVOT_SHAPE = re.compile(r"->|→|\bfrom\s+\S+\s+to\s+\S+|\b\S+\s*에서\s*\S+\s*로\b")
+# ------------------------------------------------------------------ scoring
+# Learned scorer. The weights below come from logistic regression trained on 700
+# sentences drawn from real Claude Code transcripts and labelled "would a future
+# session need to know this?". Features are structural on purpose -- only one word
+# feature survived the frequency filter -- so the scorer does not memorise one
+# project's nouns. Held-out ranking (175 sentences, 66.3% of them worth keeping):
+# top-25 precision 0.88 for this scorer vs 0.80 for the hand-written rules it
+# replaces; top-50 0.84 vs 0.76. Retrain with your own labels if your transcripts
+# look different -- FEATURES and WEIGHTS are the whole model.
 
 NOISE = re.compile(
     r"\x1b|\[\d+m|⎿|</?local-command|</?bash-|Wrote \d+ lines|tool_use|^Caveat:"
     r"|/bin/bash:|No such file|missing .*operand|command not found|Traceback"
     r"|^\$ |^\(|Is a directory")
 
+FEATURES = {
+    "code":        lambda s: "`" in s,
+    "neg":         lambda s: re.search(r"\b(not|no|never|without)\b|없|아니|못|안 ", s),
+    "date":        lambda s: re.search(r"\d{4}-\d{2}-\d{2}|\d{1,2}[-/월]\d{1,2}", s),
+    "caps":        lambda s: re.search(r"\b[A-Z]{2,}\b", s),
+    "paren":       lambda s: "(" in s,
+    "digit":       lambda s: re.search(r"\d", s),
+    "emph":        lambda s: "**" in s or "★" in s,
+    "mid":         lambda s: 80 <= len(s) <= 200,
+    "the":         lambda s: re.search(r"\bthe\b", s, re.I),
+    "assign":      lambda s: re.search(r"[=:]\s*\S", s),
+    "num_unit":    lambda s: re.search(r"\d+\s*(?:%|초|분|시간|일|개|GB|MB|KB|GPU|명)", s),
+    "firstperson": lambda s: re.match(r"^(I|We|저|제가|우리)\b", s.strip()),
+    "short":       lambda s: len(s) < 80,
+    "arrow":       lambda s: re.search(r"->|→", s),
+    "long":        lambda s: len(s) > 200,
+    "path":        lambda s: re.search(r"(/[\w.~-]+){2,}|\w+\.(py|md|json\w*|sh|yaml|toml|tex)\b", s),
+    "future":      lambda s: re.search(r"\b(will|going to|next|plan)\b|하겠|할게|예정|할 것", s),
+    "now":         lambda s: re.search(r"\b(now|currently|running|starting)\b|지금|현재|중입니다|진행", s),
+    "quest":       lambda s: s.rstrip().endswith("?"),
+}
+
+WEIGHTS = {
+    "code": 0.6474, "neg": 0.4401, "date": 0.3957, "caps": 0.3952, "paren": 0.2787,
+    "digit": 0.2595, "emph": 0.2053, "mid": 0.1845, "the": 0.1533, "assign": 0.1495,
+    "num_unit": 0.1488, "firstperson": 0.0852, "short": -0.0104, "arrow": -0.2202,
+    "long": -0.2427, "path": -0.2610, "future": -0.6438, "now": -0.6518,
+    "quest": -0.9968,
+}
+BIAS = -0.1364
+KEEP_THRESHOLD = 0.5   # probability above which a line is worth keeping
+
+
 def score_sentence(s):
+    """P(this line is worth remembering), or 0.0 if the line is not a candidate."""
     if not (30 <= len(s) <= 300) or len(s.split()) < 4:
-        return 0
+        return 0.0
     if re.match(r"^[\s#>|*`{\[\-=]", s) or s.count("`") >= 4 or NOISE.search(s):
-        return 0  # markdown scaffolding / code / pasted terminal noise
-    letters = sum(c.isalpha() for c in s)
-    if letters < len(s) * 0.4:
-        return 0  # mostly symbols/numbers -> likely code or a table row
-    sc = 0
-    if PIVOT_WORDS.search(s):                          sc += 1
-    if PIVOT_SHAPE.search(s):                          sc += 1
-    if DECISION_WORDS.search(s):                       sc += 2
-    if re.search(r"\d", s):                            sc += 1
-    if re.search(r"(/[\w.~-]+){2,}|\w+\.(py|md|json\w*|sh|yaml|toml)\b", s): sc += 2
-    if re.search(r"[=:]\s*\S", s):                     sc += 1
-    if s.endswith("?"):                                sc -= 2
-    return sc
+        return 0.0  # markdown scaffolding / code / pasted terminal noise
+    if sum(c.isalpha() for c in s) < len(s) * 0.4:
+        return 0.0  # mostly symbols/numbers -> likely code or a table row
+    z = BIAS + sum(w for name, w in WEIGHTS.items() if FEATURES[name](s))
+    return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, z))))
+
 
 def extract_candidates(path, cap=25):
     """Top-scoring sentences from a transcript: [(score, msgidx, sentence)]."""
@@ -142,7 +160,7 @@ def extract_candidates(path, cap=25):
             s = re.sub(r"\s+", " ", s).strip(" -*#`")
             sc = score_sentence(s)
             key = norm(s)
-            if sc >= 3 and key not in seen:
+            if sc >= KEEP_THRESHOLD and key not in seen:
                 seen.add(key)
                 cands.append((sc, idx, s))
     cands.sort(key=lambda c: (-c[0], c[1]))

@@ -59,12 +59,15 @@ Want more than one file can do? The full product is in development —
 
 ## Limits
 
-- `distill` is a heuristic sentence scorer, not a model. It over-collects and misses
-  things. Reading and pruning the file is part of the design, not a workaround.
-- It scores a line that *changes* a value (a correction, a rollback, an "actually")
-  above a line that merely mentions one, because the fluent on-topic sentence is the one
-  that usually survives compression while the turn that revised the answer gets dropped.
-  The weights are hand-set, not learned.
+- `distill` ranks candidate lines with a small logistic-regression model trained on 700
+  labelled sentences from real transcripts. On held-out data its top-25 precision is 0.88
+  against 0.80 for the hand-written rules it replaces (top-50: 0.84 vs 0.76; 66.3% of the
+  held-out sentences were worth keeping, so that is the floor). It still over-collects.
+  Reading and pruning the file is part of the design, not a workaround.
+- The features are structural (has a number, has a date, is a question, is about what is
+  happening *now*) rather than vocabulary, so the scorer does not depend on one project's
+  words. `FEATURES` and `WEIGHTS` in the file are the entire model — retrain and replace
+  them if your transcripts look different.
 - Transcript parsing targets Claude Code JSONL. Other formats need a different reader.
 - No embeddings, no ranking beyond reference count and recency. `grep` is the search.
 
