@@ -60,9 +60,11 @@ Want more than one file can do? The full product is in development —
 ## Limits
 
 - `distill` ranks candidate lines with a small logistic-regression model trained on 700
-  labelled sentences from real transcripts. On held-out data its top-25 precision is 0.88
-  against 0.80 for the hand-written rules it replaces (top-50: 0.84 vs 0.76; 66.3% of the
-  held-out sentences were worth keeping, so that is the floor). It still over-collects.
+  labelled sentences from real transcripts. Held-out sentences from the same projects:
+  top-25 precision 0.88 against 0.80 for the hand-written rules it replaces. Sentences from
+  four projects the model never saw, including transcripts from an older machine: 0.88
+  against 0.76, and 0.82 against 0.68 at top-50. Keeping everything scores 0.61 there, so
+  that is the floor. It still over-collects.
   Reading and pruning the file is part of the design, not a workaround.
 - The features are structural (has a number, has a date, is a question, is about what is
   happening *now*) rather than vocabulary, so the scorer does not depend on one project's
