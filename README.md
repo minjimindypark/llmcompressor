@@ -24,6 +24,28 @@ curl -O https://raw.githubusercontent.com/minjimindypark/llmcompressor/main/note
 python3 notebook.py --help
 ```
 
+## Quick start
+
+Your Claude Code transcripts are JSONL files under `~/.claude/projects/<project>/`.
+Point `distill` at the newest one:
+
+```
+# 1. build the notebook from your most recent session
+python3 notebook.py distill "$(ls -t ~/.claude/projects/*/*.jsonl | head -1)"
+
+# 2. read it. This is the whole point -- fix any line that is wrong
+$EDITOR notebook.md
+python3 notebook.py edit L07 "the deploy command is make ship"
+
+# 3. print the block and paste it at the top of your next session
+python3 notebook.py context --budget 800
+```
+
+Step 3 goes into your system prompt, your `CLAUDE.md`, or just the first message of a new
+session. Run `distill` again after each session; it only adds lines it has not seen, and
+raises a `refs` counter when a fact shows up again, which pushes it toward the top of the
+block.
+
 ## Use
 
 ```
