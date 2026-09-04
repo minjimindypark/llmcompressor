@@ -5,6 +5,7 @@ Your agent's long-term memory as one human-readable markdown file of
 numbered, dated lines. Distill sessions into it, paste a compact context
 block into your system prompt, edit or retire lines by hand.
 
+  notebook.py sync                       # newest session -> notebook -> CLAUDE.md
   notebook.py distill session.jsonl      # extract memory lines from a transcript
   notebook.py context --budget 800       # compact block for your system prompt
   notebook.py edit L07 "new text"        # fix a line
@@ -203,6 +204,43 @@ def context_block(entries, budget):
         out.append(line); used += len(line) + 1
     return head + "\n".join(out) + tail
 
+MARK_START = "<!-- notebook:start -->"
+MARK_END = "<!-- notebook:end -->"
+
+
+def newest_transcript():
+    """The most recently written Claude Code transcript for this working directory."""
+    root = os.path.expanduser("~/.claude/projects")
+    key = os.getcwd().replace("/", "-")
+    dirs = [os.path.join(root, key)] if os.path.isdir(os.path.join(root, key)) else \
+           [os.path.join(root, d) for d in os.listdir(root)] if os.path.isdir(root) else []
+    files = [os.path.join(d, f) for d in dirs if os.path.isdir(d)
+             for f in os.listdir(d) if f.endswith(".jsonl")]
+    return max(files, key=os.path.getmtime) if files else None
+
+
+def cmd_sync(args):
+    """One command: read the newest session, update the notebook, refresh CLAUDE.md."""
+    path = args.transcript or newest_transcript()
+    if not path:
+        sys.exit("error: no transcript found under ~/.claude/projects — pass one explicitly")
+    args.transcript = path
+    cmd_distill(args)
+    entries, _ = load(args.notebook)
+    block = f"{MARK_START}\n{context_block(entries, args.budget)}\n{MARK_END}"
+    target = args.into
+    old = open(target, encoding="utf-8").read() if os.path.exists(target) else ""
+    if MARK_START in old and MARK_END in old:
+        head, rest = old.split(MARK_START, 1)
+        body = head + block + rest.split(MARK_END, 1)[1]
+    else:
+        body = (old.rstrip() + "\n\n" if old.strip() else "") + block + "\n"
+    with open(target, "w", encoding="utf-8") as f:
+        f.write(body)
+    print(f"{target} updated — {len([e for e in entries if not e['retired']])} live line(s), "
+          f"~{len(block) // 4} tokens. Your next session reads it automatically.")
+
+
 def cmd_context(args):
     entries, _ = load(args.notebook)
     print(context_block(entries, args.budget))
@@ -246,6 +284,11 @@ def main(argv=None):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--notebook", default="notebook.md", help="memory file (default: notebook.md)")
     sub = p.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("sync", help="one command: newest session -> notebook -> CLAUDE.md")
+    s.add_argument("transcript", nargs="?", help="transcript file (default: newest)")
+    s.add_argument("--into", default="CLAUDE.md", help="file to write the block into")
+    s.add_argument("--budget", type=int, default=800)
+    s.set_defaults(fn=cmd_sync)
     s = sub.add_parser("distill", help="extract memory lines from a JSONL transcript")
     s.add_argument("transcript"); s.set_defaults(fn=cmd_distill)
     s = sub.add_parser("context", help="emit a compact context block for a system prompt")

@@ -26,29 +26,31 @@ python3 notebook.py --help
 
 ## Quick start
 
-Your Claude Code transcripts are JSONL files under `~/.claude/projects/<project>/`.
-Point `distill` at the newest one:
-
 ```
-# 1. build the notebook from your most recent session
-python3 notebook.py distill "$(ls -t ~/.claude/projects/*/*.jsonl | head -1)"
-
-# 2. read it. This is the whole point -- fix any line that is wrong
-$EDITOR notebook.md
-python3 notebook.py edit L07 "the deploy command is make ship"
-
-# 3. print the block and paste it at the top of your next session
-python3 notebook.py context --budget 800
+python3 notebook.py sync
 ```
 
-Step 3 goes into your system prompt, your `CLAUDE.md`, or just the first message of a new
-session. Run `distill` again after each session; it only adds lines it has not seen, and
-raises a `refs` counter when a fact shows up again, which pushes it toward the top of the
-block.
+That is the whole loop. `sync` reads your newest Claude Code session, adds what is worth
+keeping to `notebook.md`, and writes a compact block into `CLAUDE.md` between two markers.
+Your next session picks it up on its own — there is nothing to paste.
+
+Anything already in `CLAUDE.md` is left alone, and running `sync` again replaces the block
+instead of stacking another copy.
+
+When the agent has a fact wrong, open `notebook.md`, fix that line, and run `sync` again:
+
+```
+$EDITOR notebook.md          # find the wrong line, correct it
+python3 notebook.py sync     # CLAUDE.md now carries the correction
+```
+
+Writing somewhere other than `CLAUDE.md` (a system prompt file, an AGENTS.md) works too:
+`notebook.py sync --into path/to/file`.
 
 ## Use
 
 ```
+python3 notebook.py sync                      # all of the below, on the newest session
 python3 notebook.py distill session.jsonl     # pull memory lines out of a transcript
 python3 notebook.py context --budget 800      # compact block for your system prompt
 python3 notebook.py edit L07 "new text"       # fix one wrong memory
