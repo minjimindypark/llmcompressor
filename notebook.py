@@ -2,8 +2,8 @@
 """notebook.py — a memory notebook for LLM agents.
 
 Your agent's long-term memory as one human-readable markdown file of
-numbered, dated lines. Distill sessions into it, paste a compact context
-block into your system prompt, edit or retire lines by hand.
+numbered, dated lines. Sessions fold into it automatically; you open it only to correct a wrong line.
+Notebooks live in ~/.claude/notebooks -- nothing is written into your projects.
 
   notebook.py install                    # then it runs by itself, forever\n  notebook.py sync                       # newest session -> notebook -> CLAUDE.md
   notebook.py distill session.jsonl      # extract memory lines from a transcript
@@ -204,99 +204,111 @@ def context_block(entries, budget):
         out.append(line); used += len(line) + 1
     return head + "\n".join(out) + tail
 
+NOTEBOOK_DIR = os.path.expanduser("~/.claude/notebooks")
+SETTINGS = os.path.expanduser("~/.claude/settings.json")
 MARK_START = "<!-- notebook:start -->"
 MARK_END = "<!-- notebook:end -->"
 
 
+def notebook_for(cwd):
+    """One notebook per project, kept in ~/.claude/notebooks -- never in your folders."""
+    slug = re.sub(r"[^\w.-]", "-", os.path.basename(os.path.abspath(cwd))) or "root"
+    return os.path.join(NOTEBOOK_DIR, slug + ".md")
+
+
 def newest_transcript():
-    """The most recently written Claude Code transcript for this working directory."""
+    """The most recently written Claude Code transcript on this machine."""
     root = os.path.expanduser("~/.claude/projects")
-    key = os.getcwd().replace("/", "-")
-    dirs = [os.path.join(root, key)] if os.path.isdir(os.path.join(root, key)) else \
-           [os.path.join(root, d) for d in os.listdir(root)] if os.path.isdir(root) else []
-    files = [os.path.join(d, f) for d in dirs if os.path.isdir(d)
-             for f in os.listdir(d) if f.endswith(".jsonl")]
+    if not os.path.isdir(root):
+        return None
+    files = [os.path.join(root, d, f) for d in os.listdir(root)
+             if os.path.isdir(os.path.join(root, d))
+             for f in os.listdir(os.path.join(root, d)) if f.endswith(".jsonl")]
     return max(files, key=os.path.getmtime) if files else None
 
 
+def read_event(enabled):
+    if not enabled:
+        return {}
+    try:
+        return json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        return {}
+
+
 def cmd_sync(args):
-    """One command: read the newest session, update the notebook, refresh CLAUDE.md."""
-    if args.hook:
-        # Called by the SessionEnd hook: the event tells us the transcript and the project.
-        try:
-            ev = json.loads(sys.stdin.read() or "{}")
-        except ValueError:
-            ev = {}
-        cwd = ev.get("cwd") or os.getcwd()
-        args.transcript = args.transcript or ev.get("transcript_path")
-        args.notebook = os.path.join(cwd, os.path.basename(args.notebook))
-        args.into = os.path.join(cwd, os.path.basename(args.into))
-    path = args.transcript or newest_transcript()
-    if not path:
-        sys.exit("error: no transcript found under ~/.claude/projects — pass one explicitly")
-    args.transcript = path
+    """Fold a session into this project's notebook. Writes nothing into your project."""
+    ev = read_event(args.hook)
+    cwd = ev.get("cwd") or os.getcwd()
+    args.transcript = args.transcript or ev.get("transcript_path") or newest_transcript()
+    if not args.transcript:
+        sys.exit("error: no transcript found under ~/.claude/projects")
+    if not args.notebook:
+        args.notebook = notebook_for(cwd)
+    os.makedirs(os.path.dirname(os.path.abspath(args.notebook)), exist_ok=True)
     cmd_distill(args)
-    entries, _ = load(args.notebook)
-    block = f"{MARK_START}\n{context_block(entries, args.budget)}\n{MARK_END}"
-    target = args.into
-    old = open(target, encoding="utf-8").read() if os.path.exists(target) else ""
-    if MARK_START in old and MARK_END in old:
-        head, rest = old.split(MARK_START, 1)
-        body = head + block + rest.split(MARK_END, 1)[1]
-    else:
-        body = (old.rstrip() + "\n\n" if old.strip() else "") + block + "\n"
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(body)
-    print(f"{target} updated — {len([e for e in entries if not e['retired']])} live line(s), "
-          f"~{len(block) // 4} tokens. Your next session reads it automatically.")
+    if args.into:                     # optional mirror, off by default
+        entries, _ = load(args.notebook)
+        blk = MARK_START + "\n" + context_block(entries, args.budget) + "\n" + MARK_END
+        old = open(args.into, encoding="utf-8").read() if os.path.exists(args.into) else ""
+        if MARK_START in old and MARK_END in old:
+            head, rest = old.split(MARK_START, 1)
+            body = head + blk + rest.split(MARK_END, 1)[1]
+        else:
+            body = (old.rstrip() + "\n\n" if old.strip() else "") + blk + "\n"
+        open(args.into, "w", encoding="utf-8").write(body)
+        print(args.into + " updated")
 
 
-HOOK_EVENT = "SessionEnd"
-SETTINGS = os.path.expanduser("~/.claude/settings.json")
+def cmd_inject(args):
+    """Print this project's memory block; the SessionStart hook feeds it to the model."""
+    ev = read_event(args.hook)
+    path = args.notebook or notebook_for(ev.get("cwd") or os.getcwd())
+    if not os.path.exists(path):
+        return
+    entries, _ = load(path)
+    if any(not e["retired"] for e in entries):
+        print(context_block(entries, args.budget))
+        print("(memory notebook: " + path + " -- correct any wrong line there)")
 
 
 def cmd_install(args):
-    """Register a SessionEnd hook so sync runs by itself when a session ends."""
+    """Read the notebook at session start, update it at session end. Nothing else to run."""
     me = os.path.abspath(__file__)
-    cmd = f"{sys.executable} {me} sync --hook"
+    wanted = {"SessionStart": sys.executable + " " + me + " inject --hook",
+              "SessionEnd": sys.executable + " " + me + " sync --hook"}
     cfg = {}
     if os.path.exists(SETTINGS):
         cfg = json.load(open(SETTINGS, encoding="utf-8"))
-        with open(SETTINGS + ".bak", "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-    hooks = cfg.setdefault("hooks", {}).setdefault(HOOK_EVENT, [])
-    for group in hooks:
-        for h in group.get("hooks", []):
-            if h.get("command", "").endswith("sync --hook"):
-                h["command"] = cmd
-                break
-        else:
-            continue
-        break
-    else:
-        hooks.append({"hooks": [{"type": "command", "command": cmd, "timeout": 60}]})
-    with open(SETTINGS, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-    print(f"installed: {HOOK_EVENT} -> {cmd}\n"
-          f"({SETTINGS}, previous version saved as settings.json.bak)\n"
-          "Your notebook now updates itself when a session ends. Nothing to run.")
+        json.dump(cfg, open(SETTINGS + ".bak", "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=2)
+    for event, cmd in wanted.items():
+        groups = cfg.setdefault("hooks", {}).setdefault(event, [])
+        for g in groups:
+            g["hooks"] = [h for h in g.get("hooks", []) if "notebook.py" not in h.get("command", "")]
+        groups = [g for g in groups if g.get("hooks")]
+        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 60}]})
+        cfg["hooks"][event] = groups
+    json.dump(cfg, open(SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print("installed. Notebooks live in " + NOTEBOOK_DIR + " -- no files are added to "
+          "your projects.\n(previous " + SETTINGS + " saved as settings.json.bak)")
 
 
 def cmd_uninstall(args):
     if not os.path.exists(SETTINGS):
         return print("nothing to remove")
     cfg = json.load(open(SETTINGS, encoding="utf-8"))
-    groups = cfg.get("hooks", {}).get(HOOK_EVENT, [])
-    for g in list(groups):
-        g["hooks"] = [h for h in g.get("hooks", [])
-                      if not h.get("command", "").endswith("sync --hook")]
-        if not g["hooks"]:
-            groups.remove(g)
-    if not groups:
-        cfg.get("hooks", {}).pop(HOOK_EVENT, None)
-    with open(SETTINGS, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-    print("removed")
+    for event in ("SessionStart", "SessionEnd"):
+        groups = cfg.get("hooks", {}).get(event, [])
+        for g in groups:
+            g["hooks"] = [h for h in g.get("hooks", []) if "notebook.py" not in h.get("command", "")]
+        groups = [g for g in groups if g.get("hooks")]
+        if groups:
+            cfg["hooks"][event] = groups
+        else:
+            cfg.get("hooks", {}).pop(event, None)
+    json.dump(cfg, open(SETTINGS, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print("removed (notebooks kept in " + NOTEBOOK_DIR + ")")
 
 
 def cmd_context(args):
@@ -340,16 +352,21 @@ def cmd_stats(args):
 def main(argv=None):
     p = argparse.ArgumentParser(prog="notebook.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--notebook", default="notebook.md", help="memory file (default: notebook.md)")
+    p.add_argument("--notebook", default=None,
+                   help="memory file (default: ~/.claude/notebooks/<project>.md)")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("sync", help="one command: newest session -> notebook -> CLAUDE.md")
     s.add_argument("transcript", nargs="?", help="transcript file (default: newest)")
-    s.add_argument("--into", default="CLAUDE.md", help="file to write the block into")
+    s.add_argument("--into", default=None, help="also mirror the block into this file")
     s.add_argument("--budget", type=int, default=800)
     s.add_argument("--hook", action="store_true",
                    help="read the session event on stdin (used by the installed hook)")
     s.set_defaults(fn=cmd_sync)
-    s = sub.add_parser("install", help="run sync automatically when a session ends")
+    s = sub.add_parser("inject", help="print this project's memory block")
+    s.add_argument("--budget", type=int, default=800)
+    s.add_argument("--hook", action="store_true")
+    s.set_defaults(fn=cmd_inject)
+    s = sub.add_parser("install", help="hook it up so it runs by itself")
     s.set_defaults(fn=cmd_install)
     s = sub.add_parser("uninstall", help="remove the automatic hook")
     s.set_defaults(fn=cmd_uninstall)
@@ -368,6 +385,8 @@ def main(argv=None):
     s.add_argument("transcript")
     s.add_argument("--budget", type=int, default=800); s.set_defaults(fn=cmd_stats)
     args = p.parse_args(argv)
+    if getattr(args, "notebook", None) is None and args.cmd not in ("sync", "inject"):
+        args.notebook = notebook_for(os.getcwd())
     args.fn(args)
 
 if __name__ == "__main__":

@@ -30,33 +30,41 @@ python3 notebook.py --help
 python3 notebook.py install
 ```
 
-Once. From then on there is nothing to run: when a Claude Code session ends, your notebook
-updates itself and a compact block of it appears in that project's `CLAUDE.md`, which the
-next session reads on its own.
+Once. After that there is nothing to run and nothing to paste. When a Claude Code session
+ends, that project's notebook is updated; when the next one starts, the current block is
+handed to the model automatically.
 
-When the agent has a fact wrong, open `notebook.md` and fix that line. The correction is
-picked up the next time a session ends.
+**Nothing is written into your projects.** Notebooks live in `~/.claude/notebooks/<project>.md`,
+one per project. `install` backs up your `~/.claude/settings.json` first, and
+`python3 notebook.py uninstall` puts it back.
 
-`python3 notebook.py uninstall` removes the hook. Your previous `~/.claude/settings.json`
-is saved as `settings.json.bak` when installing.
+When the agent has a fact wrong, that is when you open the notebook:
 
-If you would rather run it yourself, `python3 notebook.py sync` does the same thing once,
-and `--into path/to/file` writes the block somewhere other than `CLAUDE.md`.
+```
+python3 notebook.py grep postgres         # find the line
+python3 notebook.py edit L07 "new text"   # or just edit the file
+```
+
+The correction is in effect from the next session on.
 
 ## Use
 
 ```
-python3 notebook.py install                   # run sync automatically at session end
-python3 notebook.py sync                      # all of the below, on the newest session
-python3 notebook.py distill session.jsonl     # pull memory lines out of a transcript
-python3 notebook.py context --budget 800      # compact block for your system prompt
+python3 notebook.py install                   # hook it up, once
+python3 notebook.py uninstall                 # unhook it
+python3 notebook.py grep postgres             # search what it remembered
 python3 notebook.py edit L07 "new text"       # fix one wrong memory
 python3 notebook.py kill L07                  # retire a line (kept, struck through)
-python3 notebook.py grep postgres             # search
+
+python3 notebook.py sync                      # what the SessionEnd hook runs
+python3 notebook.py inject                    # what the SessionStart hook runs
+python3 notebook.py distill session.jsonl     # fold one transcript in by hand
 python3 notebook.py stats session.jsonl       # how much the transcript shrank
 ```
 
-The memory file defaults to `./notebook.md` (`--notebook` to point elsewhere).
+Notebooks default to `~/.claude/notebooks/<project>.md` (`--notebook` to point elsewhere;
+`sync --into FILE` also mirrors the block into a file such as `CLAUDE.md` or `AGENTS.md`,
+which is how you put the memory in the repo for a team to review).
 `distill` reads Claude Code JSONL transcripts; each run adds only new lines, and bumps a
 `refs` counter when a memory resurfaces in another session. `context` puts the most
 referenced lines first and stops at your token budget.
