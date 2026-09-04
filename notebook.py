@@ -98,6 +98,19 @@ DECISION_WORDS = re.compile(
     r"|todo|remember|important|note that|confirmed|verified|root cause)\b"
     r"|하기로|결정|금지|완료|정본|원인|수정|확인|필수|해야", re.I)
 
+# A line that CHANGES a value is worth more than a line that merely mentions one.
+# Fluent, on-topic sentences crowd out the one turn that revised the answer, so
+# revision markers are scored separately and weighted above topical keywords.
+PIVOT_WORDS = re.compile(
+    r"\b(actually|turns out|correction|corrected|instead of|no longer|used to be"
+    r"|was wrong|not \w+ anymore|changed (?:from|to)|updated? (?:from|to)|rolled back"
+    r"|reverted|replaced? (?:by|with)|overrides?|supersed\w+|as of \w+|since \w+ \d"
+    r"|previously)\b"
+    r"|아니라|바뀌|바꿔|바꿨|정정|취소|철회|대신|더 이상|이제는|원래는|아까|틀렸", re.I)
+
+# "X -> Y", "from 14 to 16", "14 → 16": an explicit old-value/new-value pair.
+PIVOT_SHAPE = re.compile(r"->|→|\bfrom\s+\S+\s+to\s+\S+|\b\S+\s*에서\s*\S+\s*로\b")
+
 NOISE = re.compile(
     r"\x1b|\[\d+m|⎿|</?local-command|</?bash-|Wrote \d+ lines|tool_use|^Caveat:"
     r"|/bin/bash:|No such file|missing .*operand|command not found|Traceback"
@@ -112,6 +125,8 @@ def score_sentence(s):
     if letters < len(s) * 0.4:
         return 0  # mostly symbols/numbers -> likely code or a table row
     sc = 0
+    if PIVOT_WORDS.search(s):                          sc += 1
+    if PIVOT_SHAPE.search(s):                          sc += 1
     if DECISION_WORDS.search(s):                       sc += 2
     if re.search(r"\d", s):                            sc += 1
     if re.search(r"(/[\w.~-]+){2,}|\w+\.(py|md|json\w*|sh|yaml|toml)\b", s): sc += 2
