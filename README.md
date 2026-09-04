@@ -74,7 +74,4 @@ I was sitting in a lecture when attention's likelihood struck me as a strange me
 At a turning point, what matters is short but carries a large impact. To solve that, I am
 researching Transfiver — a model after the transformer.
 
-This tool is the small, hand-operated version of that question: a state both the human and
-the model read, where the human can correct one line and the model's next answer follows.
-
-Minji Park · [Google Scholar](https://scholar.google.com/citations?user=-y6PKhQAAAAJ&hl=en)
+Minji Park · [Transfiver (arXiv:2609.03797)](https://arxiv.org/abs/2609.03797) · [Google Scholar](https://scholar.google.com/citations?user=-y6PKhQAAAAJ&hl=en)
