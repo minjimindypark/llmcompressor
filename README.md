@@ -27,29 +27,26 @@ python3 notebook.py --help
 ## Quick start
 
 ```
-python3 notebook.py sync
+python3 notebook.py install
 ```
 
-That is the whole loop. `sync` reads your newest Claude Code session, adds what is worth
-keeping to `notebook.md`, and writes a compact block into `CLAUDE.md` between two markers.
-Your next session picks it up on its own — there is nothing to paste.
+Once. From then on there is nothing to run: when a Claude Code session ends, your notebook
+updates itself and a compact block of it appears in that project's `CLAUDE.md`, which the
+next session reads on its own.
 
-Anything already in `CLAUDE.md` is left alone, and running `sync` again replaces the block
-instead of stacking another copy.
+When the agent has a fact wrong, open `notebook.md` and fix that line. The correction is
+picked up the next time a session ends.
 
-When the agent has a fact wrong, open `notebook.md`, fix that line, and run `sync` again:
+`python3 notebook.py uninstall` removes the hook. Your previous `~/.claude/settings.json`
+is saved as `settings.json.bak` when installing.
 
-```
-$EDITOR notebook.md          # find the wrong line, correct it
-python3 notebook.py sync     # CLAUDE.md now carries the correction
-```
-
-Writing somewhere other than `CLAUDE.md` (a system prompt file, an AGENTS.md) works too:
-`notebook.py sync --into path/to/file`.
+If you would rather run it yourself, `python3 notebook.py sync` does the same thing once,
+and `--into path/to/file` writes the block somewhere other than `CLAUDE.md`.
 
 ## Use
 
 ```
+python3 notebook.py install                   # run sync automatically at session end
 python3 notebook.py sync                      # all of the below, on the newest session
 python3 notebook.py distill session.jsonl     # pull memory lines out of a transcript
 python3 notebook.py context --budget 800      # compact block for your system prompt

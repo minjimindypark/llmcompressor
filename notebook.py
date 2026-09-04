@@ -5,7 +5,7 @@ Your agent's long-term memory as one human-readable markdown file of
 numbered, dated lines. Distill sessions into it, paste a compact context
 block into your system prompt, edit or retire lines by hand.
 
-  notebook.py sync                       # newest session -> notebook -> CLAUDE.md
+  notebook.py install                    # then it runs by itself, forever\n  notebook.py sync                       # newest session -> notebook -> CLAUDE.md
   notebook.py distill session.jsonl      # extract memory lines from a transcript
   notebook.py context --budget 800       # compact block for your system prompt
   notebook.py edit L07 "new text"        # fix a line
@@ -221,6 +221,16 @@ def newest_transcript():
 
 def cmd_sync(args):
     """One command: read the newest session, update the notebook, refresh CLAUDE.md."""
+    if args.hook:
+        # Called by the SessionEnd hook: the event tells us the transcript and the project.
+        try:
+            ev = json.loads(sys.stdin.read() or "{}")
+        except ValueError:
+            ev = {}
+        cwd = ev.get("cwd") or os.getcwd()
+        args.transcript = args.transcript or ev.get("transcript_path")
+        args.notebook = os.path.join(cwd, os.path.basename(args.notebook))
+        args.into = os.path.join(cwd, os.path.basename(args.into))
     path = args.transcript or newest_transcript()
     if not path:
         sys.exit("error: no transcript found under ~/.claude/projects — pass one explicitly")
@@ -239,6 +249,54 @@ def cmd_sync(args):
         f.write(body)
     print(f"{target} updated — {len([e for e in entries if not e['retired']])} live line(s), "
           f"~{len(block) // 4} tokens. Your next session reads it automatically.")
+
+
+HOOK_EVENT = "SessionEnd"
+SETTINGS = os.path.expanduser("~/.claude/settings.json")
+
+
+def cmd_install(args):
+    """Register a SessionEnd hook so sync runs by itself when a session ends."""
+    me = os.path.abspath(__file__)
+    cmd = f"{sys.executable} {me} sync --hook"
+    cfg = {}
+    if os.path.exists(SETTINGS):
+        cfg = json.load(open(SETTINGS, encoding="utf-8"))
+        with open(SETTINGS + ".bak", "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    hooks = cfg.setdefault("hooks", {}).setdefault(HOOK_EVENT, [])
+    for group in hooks:
+        for h in group.get("hooks", []):
+            if h.get("command", "").endswith("sync --hook"):
+                h["command"] = cmd
+                break
+        else:
+            continue
+        break
+    else:
+        hooks.append({"hooks": [{"type": "command", "command": cmd, "timeout": 60}]})
+    with open(SETTINGS, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    print(f"installed: {HOOK_EVENT} -> {cmd}\n"
+          f"({SETTINGS}, previous version saved as settings.json.bak)\n"
+          "Your notebook now updates itself when a session ends. Nothing to run.")
+
+
+def cmd_uninstall(args):
+    if not os.path.exists(SETTINGS):
+        return print("nothing to remove")
+    cfg = json.load(open(SETTINGS, encoding="utf-8"))
+    groups = cfg.get("hooks", {}).get(HOOK_EVENT, [])
+    for g in list(groups):
+        g["hooks"] = [h for h in g.get("hooks", [])
+                      if not h.get("command", "").endswith("sync --hook")]
+        if not g["hooks"]:
+            groups.remove(g)
+    if not groups:
+        cfg.get("hooks", {}).pop(HOOK_EVENT, None)
+    with open(SETTINGS, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    print("removed")
 
 
 def cmd_context(args):
@@ -288,7 +346,13 @@ def main(argv=None):
     s.add_argument("transcript", nargs="?", help="transcript file (default: newest)")
     s.add_argument("--into", default="CLAUDE.md", help="file to write the block into")
     s.add_argument("--budget", type=int, default=800)
+    s.add_argument("--hook", action="store_true",
+                   help="read the session event on stdin (used by the installed hook)")
     s.set_defaults(fn=cmd_sync)
+    s = sub.add_parser("install", help="run sync automatically when a session ends")
+    s.set_defaults(fn=cmd_install)
+    s = sub.add_parser("uninstall", help="remove the automatic hook")
+    s.set_defaults(fn=cmd_uninstall)
     s = sub.add_parser("distill", help="extract memory lines from a JSONL transcript")
     s.add_argument("transcript"); s.set_defaults(fn=cmd_distill)
     s = sub.add_parser("context", help="emit a compact context block for a system prompt")
