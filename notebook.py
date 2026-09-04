@@ -103,6 +103,12 @@ def iter_messages(path):
 # replaces; top-50 0.84 vs 0.76. Retrain with your own labels if your transcripts
 # look different -- FEATURES and WEIGHTS are the whole model.
 
+# The block this tool injects at session start comes back in the next transcript.
+# Without this filter the notebook eats its own output and lines multiply.
+OWN_OUTPUT = re.compile(
+    r"^\[L\d+\]|^## Memory notebook|^Cite \[L##\]|^\(memory notebook:|"
+    r"<!-- notebook:(start|end) -->")
+
 NOISE = re.compile(
     r"\x1b|\[\d+m|⎿|</?local-command|</?bash-|Wrote \d+ lines|tool_use|^Caveat:"
     r"|/bin/bash:|No such file|missing .*operand|command not found|Traceback"
@@ -145,6 +151,8 @@ def score_sentence(s):
     """P(this line is worth remembering), or 0.0 if the line is not a candidate."""
     if not (30 <= len(s) <= 300) or len(s.split()) < 4:
         return 0.0
+    if OWN_OUTPUT.search(s):
+        return 0.0  # our own injected block coming back around
     if re.match(r"^[\s#>|*`{\[\-=]", s) or s.count("`") >= 4 or NOISE.search(s):
         return 0.0  # markdown scaffolding / code / pasted terminal noise
     if sum(c.isalpha() for c in s) < len(s) * 0.4:
