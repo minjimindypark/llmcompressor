@@ -62,3 +62,8 @@ depends on your transcripts and your budget; run `stats` to see yours.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+---
+
+Want more than one file can do? The full product is in development —
+[reserve early access ($5, refundable)](https://agent-notebook.vercel.app/a1-agentdev-losescontext?utm_source=github&utm_medium=readme&utm_content=A1).
