@@ -52,6 +52,11 @@ Measured on one real transcript (84 MB, 4.87 M characters of message text): the 
 context block was 3,025 characters — a 1,609:1 reduction against message text. Your ratio
 depends on your transcripts and your budget; run `stats` to see yours.
 
+---
+
+Want more than one file can do? The full product is in development —
+[reserve early access ($5, refundable)](https://agent-notebook.vercel.app/a1-agentdev-losescontext?utm_source=github&utm_medium=readme&utm_content=A1).
+
 ## Limits
 
 - `distill` is a heuristic sentence scorer, not a model. It over-collects and misses
@@ -62,8 +67,3 @@ depends on your transcripts and your budget; run `stats` to see yours.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
----
-
-Want more than one file can do? The full product is in development —
-[reserve early access ($5, refundable)](https://agent-notebook.vercel.app/a1-agentdev-losescontext?utm_source=github&utm_medium=readme&utm_content=A1).
