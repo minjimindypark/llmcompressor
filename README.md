@@ -105,11 +105,3 @@ Want more than one file can do? The full product is in development —
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
-## About the author
-
-I was sitting in a lecture when attention's likelihood struck me as a strange mechanism.
-At a turning point, what matters is short but carries a large impact. To solve that, I am
-researching Transfiver — a model after the transformer.
-
-Minji Park · [Transfiver (arXiv:2609.03797)](https://arxiv.org/abs/2609.03797) · [Google Scholar](https://scholar.google.com/citations?user=-y6PKhQAAAAJ&hl=en)
