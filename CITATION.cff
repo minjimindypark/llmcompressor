@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "notebook.py — readable, editable memory for LLM agents"
+message: "If you use this tool, please cite the author's related work."
+authors:
+  - family-names: Park
+    given-names: Minji
+    affiliation: Korea Institute of Energy Technology
+repository-code: "https://github.com/minjimindypark/llmcompressor"
+license: Apache-2.0
+references:
+  - type: article
+    title: "Transfiver: Human-AI Co-Inference through a Shared Editable State"
+    authors:
+      - family-names: Park
+        given-names: Minji
+      - family-names: Yoon
+        given-names: Seunghyun
+      - family-names: Lim
+        given-names: Hyuk
+    year: 2026
+    notes: "arXiv:2609.03797"
+    url: "https://arxiv.org/abs/2609.03797"
+  - type: conference-paper
+    title: "Evidence, State Change, or Coverage? Choosing Turns for Tight-Budget Dialogue Compression"
+    authors:
+      - family-names: Park
+        given-names: Minji
+      - family-names: Yoon
+        given-names: Seunghyun
+      - family-names: Lim
+        given-names: Hyuk
+    collection-title: "Proceedings of EMNLP 2026"
+    year: 2026
