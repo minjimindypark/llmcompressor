@@ -102,29 +102,6 @@ Want more than one file can do? The full product is in development —
 - Transcript parsing targets Claude Code JSONL. Other formats need a different reader.
 - No embeddings, no ranking beyond reference count and recency. `grep` is the search.
 
-## Related work and citing
-
-`notebook.py` is the hand-operated version of a research question — a state the human and the
-model share, where the human can read and correct what the model relies on. That question is
-developed in:
-
-- Minji Park, Seunghyun Yoon, Hyuk Lim. *Transfiver: Human-AI Co-Inference through a Shared
-  Editable State.* arXiv:2609.03797, 2026. https://arxiv.org/abs/2609.03797
-- Minji Park, Seunghyun Yoon, Hyuk Lim. *Evidence, State Change, or Coverage? Choosing Turns
-  for Tight-Budget Dialogue Compression.* EMNLP 2026. (the line-selection idea `distill` uses)
-
-If this tool is useful in your work, a citation to either paper is appreciated. A machine-readable
-`CITATION.cff` is included.
-
-```bibtex
-@article{park2026transfiver,
-  title  = {Transfiver: Human-AI Co-Inference through a Shared Editable State},
-  author = {Park, Minji and Yoon, Seunghyun and Lim, Hyuk},
-  journal= {arXiv preprint arXiv:2609.03797},
-  year   = {2026}
-}
-```
-
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
